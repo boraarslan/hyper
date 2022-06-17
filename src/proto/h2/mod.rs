@@ -8,7 +8,7 @@ use std::io::{self, Cursor, IoSlice};
 use std::mem;
 use std::task::Context;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tracing::{debug, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 use crate::body::HttpBody;
 use crate::common::{task, Future, Pin, Poll};
@@ -305,12 +305,16 @@ where
         if self.buf.is_empty() {
             self.buf = loop {
                 match ready!(self.recv_stream.poll_data(cx)) {
-                    None => return Poll::Ready(Ok(())),
+                    None => {
+                        return Poll::Ready(Ok(()));
+                    }
                     Some(Ok(buf)) if buf.is_empty() && !self.recv_stream.is_end_stream() => {
                         continue
                     }
                     Some(Ok(buf)) => {
                         self.ping.record_data(buf.len());
+                        let n = buf.len();
+                        info!("Recieved the first byte(s): {}.", n);
                         break buf;
                     }
                     Some(Err(e)) => {
@@ -329,6 +333,7 @@ where
         read_buf.put_slice(&self.buf[..cnt]);
         self.buf.advance(cnt);
         let _ = self.recv_stream.flow_control().release_capacity(cnt);
+        info!("Packet fully ready");
         Poll::Ready(Ok(()))
     }
 }
@@ -351,11 +356,13 @@ where
         // will get the correct from `poll_reset` anyway.
         let cnt = match ready!(self.send_stream.poll_capacity(cx)) {
             None => Some(0),
-            Some(Ok(cnt)) => self
-                .send_stream
-                .write(&buf[..cnt], false)
-                .ok()
-                .map(|()| cnt),
+            Some(Ok(cnt)) => {
+                info!("Packet bytes written");
+                self.send_stream
+                    .write(&buf[..cnt], false)
+                    .ok()
+                    .map(|()| cnt)
+            }
             Some(Err(_)) => None,
         };
 
@@ -383,14 +390,12 @@ where
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), io::Error>> {
         if self.send_stream.write(&[], true).is_ok() {
-            return Poll::Ready(Ok(()))
+            return Poll::Ready(Ok(()));
         }
 
         Poll::Ready(Err(h2_to_io_error(
             match ready!(self.send_stream.poll_reset(cx)) {
-                Ok(Reason::NO_ERROR) => {
-                    return Poll::Ready(Ok(()))
-                }
+                Ok(Reason::NO_ERROR) => return Poll::Ready(Ok(())),
                 Ok(Reason::CANCEL) | Ok(Reason::STREAM_CLOSED) => {
                     return Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()))
                 }
