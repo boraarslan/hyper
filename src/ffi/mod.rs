@@ -36,13 +36,13 @@
 #[cfg(not(all(feature = "client", feature = "http1")))]
 compile_error!("The `ffi` feature currently requires the `client` and `http1` features.");
 
-#[cfg(not(hyper_unstable_ffi))]
-compile_error!(
-    "\
-    The `ffi` feature is unstable, and requires the \
-    `RUSTFLAGS='--cfg hyper_unstable_ffi'` environment variable to be set.\
-"
-);
+// #[cfg(not(hyper_unstable_ffi))]
+// compile_error!(
+//     "\
+//     The `ffi` feature is unstable, and requires the \
+//     `RUSTFLAGS='--cfg hyper_unstable_ffi'` environment variable to be set.\
+// "
+// );
 
 #[macro_use]
 mod macros;
